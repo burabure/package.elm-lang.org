@@ -24,7 +24,7 @@ type alias Context =
 
 
 toLink : Context -> Canonical -> Html
-toLink ctx {home,name} =
+toLink ctx ({home,name} as canonical) =
   if Set.member name ctx.available then
     let
       link =
@@ -35,7 +35,7 @@ toLink ctx {home,name} =
       a [href link] [text name]
 
   else
-    text (qualifiedType home name)
+    text (qualifiedType canonical)
 
 
 parseLink : String -> String
@@ -51,9 +51,13 @@ anchorContext {current} home =
     home ++ "#"
 
 
-qualifiedType : String -> String -> String
-qualifiedType moduleName tipe =
-  if String.isEmpty moduleName then
-    tipe
+qualifiedType : Canonical -> String
+qualifiedType {home, name} =
+  if String.isEmpty home then
+    name
   else
-    moduleName ++ "." ++ tipe
+    home ++ "." ++ name
+
+nameToString : Canonical -> String
+nameToString {home, name} =
+  home ++ "." ++ name

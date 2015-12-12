@@ -10,6 +10,7 @@ import Json.Decode as Json exposing ((:=))
 
 import Component.PackageDocs as PDocs
 import Docs.Package as Docs
+import Parse.Type as Type
 import Utils.Markdown as Markdown
 import Utils.Path as Path
 
@@ -21,7 +22,7 @@ import Utils.Path as Path
 type Model
     = AwaitingFile
     | BadFile (Maybe String)
-    | GoodFile (Dict.Dict String Docs.Module) PDocs.Model
+    | GoodFile (Dict.Dict String (Docs.Module String)) PDocs.Model
 
 
 init : (Model, Fx.Effects Action)
@@ -38,7 +39,7 @@ init =
 type Action
     = NoOp
     | Fail (Maybe String)
-    | LoadDocs (Dict.Dict String Docs.Module)
+    | LoadDocs (Dict.Dict String (Docs.Module String))
     | SwitchTo String
 
 
@@ -143,18 +144,11 @@ moduleLink address moduleName =
 -- DOCS FUNCTIONS
 
 
-docsForModule : String -> Dict.Dict String Docs.Module -> PDocs.Model
+docsForModule : String -> Dict.Dict String (Docs.Module String) -> PDocs.Model
 docsForModule moduleName docs =
   case Dict.get moduleName docs of
     Just moduleDocs ->
       let
-        chunks =
-          PDocs.toChunks moduleDocs
-            |> List.map (PDocs.chunkMap PDocs.stringToType)
-
-        info =
-          PDocs.Info moduleName (PDocs.toNameDict docs) chunks
-
         docsContext =
           case (Dict.get moduleName docs) of
             Just modul ->
@@ -168,7 +162,11 @@ docsForModule moduleName docs =
               }
 
       in
-        PDocs.ParsedDocs (info, docsContext)
+      PDocs.toChunks moduleDocs
+        |> List.map (PDocs.chunkMap Type.parseWithFallback)
+        |> PDocs.Info moduleName (PDocs.toNameDict docs)
+        |> flip (,) docsContext
+        |> PDocs.ParsedDocs
 
     Nothing ->
       PDocs.Loading

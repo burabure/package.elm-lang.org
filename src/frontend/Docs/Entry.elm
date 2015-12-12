@@ -25,19 +25,25 @@ type alias Model tipe =
 
 type Info tipe
     = Value tipe (Maybe Fixity)
-    | Union
-        { vars : List String
-        , tags : List (Tag tipe)
-        }
-    | Alias
-        { vars : List String
-        , tipe : tipe
-        }
+    | Union (UnionInfo tipe)
+    | Alias (AliasInfo tipe)
+
+
+type alias UnionInfo tipe =
+    { vars : List String
+    , tags : List (Tag tipe)
+    }
 
 
 type alias Tag tipe =
     { tag : String
     , args : List tipe
+    }
+
+
+type alias AliasInfo tipe =
+    { vars : List String
+    , tipe : tipe
     }
 
 
@@ -69,10 +75,10 @@ map func model =
           Value (func tipe) fixity
 
         Union {vars,tags} ->
-          Union { vars = vars, tags = List.map (tagMap func) tags }
+          Union (UnionInfo vars (List.map (tagMap func) tags))
 
         Alias {vars,tipe} ->
-          Alias { vars = vars, tipe = func tipe }
+          Alias (AliasInfo vars (func tipe))
   in
     { model | info = newInfo }
 
@@ -95,7 +101,7 @@ stringView model =
             [ nameToLink model.name :: padded colon ++ [text tipe] ]
 
         Union {vars,tags} ->
-            unionAnnotation (\t -> [text t]) model.name vars tags
+            unionAnnotation True (\t -> [text t]) model.name vars tags
 
         Alias {vars,tipe} ->
             [ aliasNameLine model.name vars
@@ -117,27 +123,31 @@ stringView model =
 
 typeView : Name.Dictionary -> Name.Context -> Model Type -> Html
 typeView nameDict docsContext model =
-  let
-    annotation =
-      case model.info of
-        Value tipe _ ->
-            valueAnnotation nameDict docsContext model.name tipe
+  div [ class "docs-entry", id model.name ]
+    [ annotationBlock (viewTypeAnnotation True nameDict docsContext model)
+    , div [class "docs-comment"] [Markdown.block model.docs]
+    ]
 
-        Union {vars,tags} ->
-            unionAnnotation (Type.toHtml nameDict docsContext Type.App) model.name vars tags
 
-        Alias {vars,tipe} ->
-            aliasAnnotation nameDict docsContext model.name vars tipe
-  in
-    div [ class "docs-entry", id model.name ]
-      [ annotationBlock annotation
-      , div [class "docs-comment"] [Markdown.block model.docs]
-      ]
+viewTypeAnnotation : Bool -> Name.Dictionary -> Name.Context -> Model Type -> List (List Html)
+viewTypeAnnotation isNormal nameDict docsContext model =
+  case model.info of
+    Value tipe _ ->
+      valueAnnotation isNormal nameDict docsContext model.name tipe
+
+    Union {vars,tags} ->
+      unionAnnotation isNormal (Type.toHtml nameDict docsContext Type.App) model.name vars tags
+
+    Alias {vars,tipe} ->
+      aliasAnnotation isNormal nameDict docsContext model.name vars tipe
 
 
 annotationBlock : List (List Html) -> Html
 annotationBlock bits =
-  div [ class "docs-annotation" ]
+  div
+    [ class "formatted-code"
+    , style ["padding" => "10px 0"]
+    ]
     (List.concat (List.intersperse [text "\n"] bits))
 
 
@@ -163,18 +173,29 @@ operator =
 -- VALUE ANNOTATIONS
 
 
-valueAnnotation : Name.Dictionary -> Name.Context -> String -> Type -> List (List Html)
-valueAnnotation nameDict docsContext name tipe =
-  case tipe of
-    Type.Function args result ->
-        if String.length name + 3 + Type.length Type.Other tipe > 64 then
-            [ nameToLink name ] :: longFunctionAnnotation nameDict docsContext args result
+valueAnnotation : Bool -> Name.Dictionary -> Name.Context -> String -> Type -> List (List Html)
+valueAnnotation isNormal nameDict docsContext name tipe =
+  let
+    nameHtml =
+      if isNormal then
+        nameToLink name
 
-        else
-            [ nameToLink name :: padded colon ++ Type.toHtml nameDict docsContext Type.Other tipe ]
+      else
+        text name
 
-    _ ->
-        [ nameToLink name :: padded colon ++ Type.toHtml nameDict docsContext Type.Other tipe ]
+    maxLength =
+      if isNormal then 64 else 88
+  in
+    case tipe of
+      Type.Function args result ->
+          if String.length name + 3 + Type.length Type.Other tipe > maxLength then
+            [ nameHtml ] :: longFunctionAnnotation nameDict docsContext args result
+
+          else
+            [ nameHtml :: padded colon ++ Type.toHtml nameDict docsContext Type.Other tipe ]
+
+      _ ->
+        [ nameHtml :: padded colon ++ Type.toHtml nameDict docsContext Type.Other tipe ]
 
 
 longFunctionAnnotation : Name.Dictionary -> Name.Context -> List Type -> Type -> List (List Html)
@@ -195,15 +216,20 @@ longFunctionAnnotation nameDict docsContext args result =
 -- UNION ANNOTATIONS
 
 
-unionAnnotation : (tipe -> List Html) -> String -> List String -> List (Tag tipe) -> List (List Html)
-unionAnnotation tipeToHtml name vars tags =
+unionAnnotation : Bool -> (tipe -> List Html) -> String -> List String -> List (Tag tipe) -> List (List Html)
+unionAnnotation isNormal tipeToHtml name vars tags =
   let
     nameLine =
-      [ keyword "type"
-      , space
-      , nameToLink name
-      , text (String.concat (List.map ((++) " ") vars))
-      ]
+      if isNormal then
+        [ keyword "type"
+        , space
+        , nameToLink name
+        , text (String.concat (List.map ((++) " ") vars))
+        ]
+
+      else
+        [ text <| "type " ++ name ++ String.concat (List.map ((++) " ") vars)
+        ]
 
     tagLines =
       List.map2 (::)
@@ -222,8 +248,8 @@ viewTag tipeToHtml {tag,args} =
 -- ALIAS ANNOTATIONS
 
 
-aliasAnnotation : Name.Dictionary -> Name.Context -> String -> List String -> Type -> List (List Html)
-aliasAnnotation nameDict docsContext name vars tipe =
+aliasAnnotation : Bool -> Name.Dictionary -> Name.Context -> String -> List String -> Type -> List (List Html)
+aliasAnnotation isNormal nameDict docsContext name vars tipe =
   let
     typeLines =
       case tipe of
@@ -247,8 +273,15 @@ aliasAnnotation nameDict docsContext name vars tipe =
 
         _ ->
             [ text "    " :: Type.toHtml nameDict docsContext Type.Other tipe ]
+
+    nameLine =
+      if isNormal then
+        aliasNameLine name vars
+      else
+        [ text <| "type alias " ++ name ++ String.concat (List.map ((++) " ") vars) ++ " = "
+        ]
   in
-    aliasNameLine name vars :: typeLines
+    nameLine :: typeLines
 
 
 aliasNameLine : String -> List String -> List Html

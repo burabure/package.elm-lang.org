@@ -1,11 +1,16 @@
 module Docs.Version
     ( Version
+    , one
+    , getMajor
     , Dictionary
     , MinorPatch
     , decoder
+    , Magnitude(..)
+    , magnitude
     , filterInteresting
     , realMax
     , toDict
+    , fromString
     , fromStringList
     , vsnToString
     )
@@ -16,7 +21,21 @@ import Json.Decode as Json exposing (..)
 import String
 
 
+
+-- REPRESENTATION
+
+
 type alias Version = (Int, Int, Int)
+
+
+getMajor : Version -> Int
+getMajor (major, _, _) =
+  major
+
+
+one : Version
+one =
+  ( 1, 0, 0 )
 
 
 
@@ -51,6 +70,28 @@ all list =
 fromStringList : List String -> Result String (List Version)
 fromStringList versions =
   all (List.map fromString versions)
+
+
+
+-- MAGNITUDE
+
+
+type Magnitude = Major | Minor | Patch
+
+
+magnitude : Version -> Version -> Magnitude
+magnitude ((major1, minor1, patch1) as v1) (major2, minor2, patch2) =
+  if major1 /= major2 then
+    Major
+
+  else if minor1 /= minor2 then
+    Minor
+
+  else if patch1 /= patch2 then
+    Patch
+
+  else
+    Debug.crash <| "Why are you trying to get the magnitude between version " ++ vsnToString v1 ++ " and itself?"
 
 
 
